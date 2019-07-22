@@ -1,0 +1,32 @@
+version: '3'
+services:
+  proxy:
+     build:
+       context: .
+       dockerfile: Dockerfile
+     image: git_proxy:latest
+     container_name: git_proxy
+     restart: on-failure
+     command: bash -c "exec nginx -g 'daemon off;'"
+     networks:
+       overlay:
+         aliases:
+           - proxy
+     volumes:
+       - ./default:/etc/nginx/sites-available/default
+     ports:
+      - 80:80
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: on-failure
+    networks:
+      overlay:
+        aliases:
+          - redis
+    ports:
+      - 6379:6379
+
+networks:
+  overlay:
