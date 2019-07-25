@@ -14,7 +14,8 @@ server {
 	server_name _;
 
 	location / {
-			set $auth_header_3 '';
+		  resolver 1.1.1.1 [::1];
+			set $backend_host "https://github.com";
 			access_by_lua '
 				local redis = require "redis"
 			  local red = redis:new()
@@ -24,25 +25,38 @@ server {
 			    return ngx.exit(500)
 			  end
 
-				local token = tostring(ngx.var.http_authorization)
+				if(ngx.var.http_authorization ~= nil) then
+					  local token = tostring(ngx.var.http_authorization)
 
-				token = token:gsub("Basic ", "")
-			  token = ngx.decode_base64(token)
-			  token = token:gsub(":", "")
+					  token = token:gsub("Basic ", "")
+					  token = ngx.decode_base64(token)
+					  token = token:gsub(":", "")
 
-				local found_token, err = red:get(token)
+					  local found_token, err = red:get(token)
 
-				if (found_token == ngx.null and ngx.var.http_authorization ~= nil) then
-					ngx.log(ngx.ERR, "Token not found or valid: ", token)
-					return ngx.exit(403)
+					  if (found_token == ngx.null and ngx.var.http_authorization ~= nil) then
+					    ngx.log(ngx.ERR, "Token not found or valid: ", token)
+					    return ngx.exit(403)
+					  end
+
+						if found_token ~= nil then
+							local access_token = found_token:match("^%w+://([^@]+)")
+							local domain = found_token:match("%w+@([^/]+)")
+							local index = string.find(found_token, "/", string.len(access_token));
+							local uri = string.sub(found_token, index)
+						  local auth_header = "Basic " .. ngx.encode_base64(access_token)
+
+						  ngx.req.set_header("Authorization", auth_header)
+							-- ngx.req.set_uri(uri .. "/info/refs?service=git-upload-pack")
+							ngx.var.backend_host = "https://"..domain
+						end
+			  else
+				-- set some default address
+				-- ngx.req.set_uri("/semyoshin/git_proxy_redis.git/info/refs?service=git-upload-pack")
+				-- return ngx.exit(401)
 				end
-
-				found_token = tostring(found_token) .. ":x-oauth-basic"
-
-				local auth_header = "Basic " .. ngx.encode_base64(found_token)
-				ngx.req.set_header("Authorization", auth_header)
 				';
-			proxy_pass  https://github.com;
+			proxy_pass  $backend_host;
 		  proxy_http_version 1.1;
 	}
 }
